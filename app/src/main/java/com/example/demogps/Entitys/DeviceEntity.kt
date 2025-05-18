@@ -15,8 +15,6 @@ data class DeviceEntity(
 
     val alias: String,
 
-    val descripcion: String
-
 
 ) {
 

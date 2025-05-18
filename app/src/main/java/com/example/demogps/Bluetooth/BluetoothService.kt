@@ -55,16 +55,19 @@ class BluetoothService(private val context: Context) {
 
 
     fun sendCommand(command: String) {
-        if(ContextCompat.checkSelfPermission(context, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED){
-            return
-        }
-
         try {
-            bluetoothSocket?.outputStream?.write(command.toByteArray())
+            if (bluetoothSocket == null) throw NullPointerException("Socket Bluetooth es nulo")
+            val outputStream = bluetoothSocket!!.outputStream
+            outputStream.write(command.toByteArray())
+            outputStream.flush()
+            Log.d("Bluetoothc", "Comando enviado: $command")
         } catch (e: IOException) {
-            e.printStackTrace()
+            Log.e("Bluetooth", "Error al enviar comando: ${e.message}")
+            closeConnection()
+            throw e
         }
     }
+
 
     fun receiveData(onDataReceived: (String) -> Unit, onError: (Exception) -> Unit) {
         Log.d("Bluetooth", "receiveData() fue llamada")
@@ -76,21 +79,27 @@ class BluetoothService(private val context: Context) {
 
         val inputStream = bluetoothSocket?.inputStream
 
-        // 🧵 Iniciar un hilo para escuchar datos
         Thread {
             try {
-                val buffer = ByteArray(1024) // Buffer de lectura
+                val buffer = ByteArray(1024)
                 var bytes: Int
 
                 while (bluetoothSocket?.isConnected == true) {
-                    // 🔍 Esperar a que haya datos disponibles (esto bloquea hasta que hay algo o se desconecta)
                     if (inputStream?.available() ?: 0 > 0) {
                         bytes = inputStream!!.read(buffer)
                         val data = String(buffer, 0, bytes)
                         Log.d("Bluetooth", "Datos recibidos: $data")
+
+                        // Detectar comandos especiales
+                        if (data.contains("EndConecction", ignoreCase = true)) {
+                            Log.d("Bluetooth", "Fin de datos recibidos por el dispositivo")
+                            onDataReceived(data.replace("EndConecction", "").trim())
+                            break // o salir del loop de lectura sin error
+                        }
+
                         onDataReceived(data)
                     } else {
-                        Thread.sleep(200)
+                        Thread.sleep(200) // Reducir la carga en el CPU
                     }
                 }
             } catch (e: IOException) {
@@ -99,18 +108,27 @@ class BluetoothService(private val context: Context) {
             } catch (e: Exception) {
                 Log.e("Bluetooth", "Error desconocido: ${e.message}")
                 onError(e)
+            } finally {
+                Log.d("Bluetooth", "Finalizando hilo de recepción")
+                closeConnection() // Cierra la conexión al finalizar
             }
         }.start()
     }
 
 
 
+
     fun closeConnection() {
         try {
+            bluetoothSocket?.inputStream?.close()
+            bluetoothSocket?.outputStream?.close()
             bluetoothSocket?.close()
-        } catch (e: IOException){
-            e.printStackTrace()
+            bluetoothSocket = null
+            Log.d("Bluetooth", "Conexión Bluetooth cerrada correctamente")
+        } catch (e: IOException) {
+            Log.e("Bluetooth", "Error al cerrar la conexión: ${e.message}")
         }
     }
+
 
 }

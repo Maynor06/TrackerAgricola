@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.rememberNavController
 import com.example.demogps.Bluetooth.BluetoothReceiver
+import com.example.demogps.Compose.UX.MainNavigation
 import com.example.demogps.Compose.UX.ServiciosScreen
 import com.example.demogps.Compose.ui.theme.DemoGPSTheme
 import com.example.demogps.Views.DeviceViewModel
@@ -111,15 +112,11 @@ class ScreenMain : ComponentActivity() {
 
         setContent {
             DemoGPSTheme {
-                val navController = rememberNavController()
-                ServiciosScreen(
-                    viewModel = viewModel,
-                    dispositivosEncontrados = dispositivosEncontrados,
-                    navController = navController
-                )
+                MainNavigation(viewModel = viewModel) // Cambiamos a MainNavigation
             }
         }
     }
+
 }
 
 class DeviceViewModelFactory(private val app: Application) : ViewModelProvider.Factory {

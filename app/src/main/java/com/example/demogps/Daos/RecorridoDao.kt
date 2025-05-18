@@ -16,5 +16,8 @@ interface RecorridoDao {
     @Query("SELECT * FROM recorridos WHERE deviceId = :deviceId")
     fun obtenerRecorridosPorDispositivo(deviceId: Long): LiveData<List<RecorridoEntity>>
 
+    @Query("SELECT * FROM recorridos WHERE deviceId = :deviceId")
+    fun obtenerRecorridosPorDispositivoDirecto(deviceId: Long): List<RecorridoEntity>
+
 
 }

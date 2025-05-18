@@ -83,7 +83,7 @@ fun MainNavigation(viewModel: DeviceViewModel){
                 )
             ) { backStackEntry ->
             val deviceName = backStackEntry.arguments?.getString("deviceName") ?: "Desconocido"
-            val deviceId = backStackEntry.arguments?.getString("deviceId")?.toLong() ?: 0L
+            val deviceId = backStackEntry.arguments?.getLong("deviceId") ?: 0L
             RecorridosScreen(deviceName = deviceName, deviceId = deviceId, viewModel = viewModel)
         }
     }
@@ -112,13 +112,11 @@ fun solicitarPermisosBluetooth(context: Context) {
 fun ServiciosScreen(viewModel: DeviceViewModel, dispositivosEncontrados: List<BluetoothDevice>, navController: NavController) {
     val devices by viewModel.allDevices.observeAsState(emptyList())
     val context = LocalContext.current
+    val deviceIdE = 1L;
     val pairedDevices = remember { viewModel.obtenerDispositivosPareados(context) }
     val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
     var dispositivosEncontrados by remember { mutableStateOf(listOf<BluetoothDevice>()) }
 
-    LaunchedEffect(Unit) {
-        solicitarPermisosBluetooth(context)
-    }
 
     val receiver = remember {
         object: BroadcastReceiver(){
@@ -152,11 +150,13 @@ fun ServiciosScreen(viewModel: DeviceViewModel, dispositivosEncontrados: List<Bl
         true // Para versiones anteriores, no se necesita el permiso
     }
 
-    // Iniciar búsqueda de dispositivos
-    if (bluetoothAdapter.isDiscovering) {
-        bluetoothAdapter.cancelDiscovery()
+    LaunchedEffect(Unit) {
+        solicitarPermisosBluetooth(context)
+        if (bluetoothAdapter.isDiscovering) {
+            bluetoothAdapter.cancelDiscovery()
+        }
+        bluetoothAdapter.startDiscovery()
     }
-    bluetoothAdapter.startDiscovery()
 
     Column(
         modifier = Modifier
@@ -198,11 +198,11 @@ fun ServiciosScreen(viewModel: DeviceViewModel, dispositivosEncontrados: List<Bl
                             device = device,
                             onSuccess = {
                                 onSuccess()
-                                Log.d("NavigationDebug", "Navegando a recorridos con deviceName=$deviceName y deviceAddress=$deviceAddress")
+                                Log.d("NavigationDebug", "Navegando a recorridos con deviceName=$deviceName y deviceId=$deviceIdE")
                                 val safeDevice = deviceName ?: "Desconocido"
                                 val safeDeviceAdress = deviceAddress ?: "Sin direccion"
                                 try {
-                                    navController.navigate("recorridos/${deviceName}/1")
+                                    navController.navigate("recorridos/${deviceName}/${deviceIdE}")
                                 } catch (e: Exception){
                                     Log.e("NavigationError", "Error al navegar: ${e.message}")
                                 }

@@ -1,6 +1,7 @@
 package com.example.demogps.Compose.UX
 
 import android.app.Application
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,6 +37,7 @@ import kotlinx.coroutines.withContext
 fun RecorridosScreen(deviceName: String, deviceId: Long, viewModel: DeviceViewModel) {
     val context = LocalContext.current
     val recorridos by viewModel.obtenerRecorridosDeLaBd(deviceId).observeAsState(emptyList())
+    Log.d("recorridos", "estos son los datos: $deviceName $deviceId")
 
     LaunchedEffect(Unit) {
         viewModel.sincronizarRecorridos(deviceId){ mensaje ->
@@ -108,39 +112,47 @@ fun cardRecorrido(recorrido: RecorridoEntity){
 }
 
 @Composable
-fun buttonAddRecorrido(deviceViewModel: DeviceViewModel, deviceId:Long ){
+fun buttonAddRecorrido(deviceViewModel: DeviceViewModel, deviceId: Long) {
     val context = LocalContext.current
+    val isLoading = remember { mutableStateOf(false) }
 
     Button(
         onClick = {
+            isLoading.value = true
             CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val recorridosDelDispositivo = deviceViewModel.obtenerRecorridosDelDispositivo()
+                    val recorridoBd = deviceViewModel.recorridoDao.obtenerRecorridosPorDispositivoDirecto(deviceId)
+                    val nombresEnBd = recorridoBd.map { it.date }
+                    val nuevosRecorridos = recorridosDelDispositivo.filter { it !in nombresEnBd }
 
-                val recorridosDelDispositivo = deviceViewModel.obtenerRecorridosDelDispositivo()
-
-                val recorridoBd = withContext(Dispatchers.IO) {
-                    deviceViewModel.obtenerRecorridosDeLaBd(deviceId).value ?: emptyList()
-                }
-
-                val nombresEnBd = recorridoBd.map { it.date }
-                val nuevosRecorridos = recorridosDelDispositivo.filter { it !in nombresEnBd }
-
-                if(nuevosRecorridos.isNotEmpty()){
-                    nuevosRecorridos.forEach { recorrido ->
-                        val entity = RecorridoEntity(
-                            deviceId = deviceId,
-                            date = recorrido.first().toString()
-                        )
-                        deviceViewModel.insertarRecorrido(entity)
-                        val id = 1 // esto lo vamos a cambiar.
-                        deviceViewModel.obtenerCoordenadasDeRecorrido(recorrido, id.toLong())
+                    withContext(Dispatchers.Main) {
+                        if (nuevosRecorridos.isNotEmpty()) {
+                            nuevosRecorridos.forEach { recorrido ->
+                                val entity = RecorridoEntity(
+                                    deviceId = deviceId,
+                                    date = recorrido
+                                )
+                                deviceViewModel.insertarRecorrido(entity)
+                                // Esto debe ajustarse para obtener un ID válido
+                                deviceViewModel.obtenerCoordenadasDeRecorrido(recorrido, entity.id)
+                            }
+                            Toast.makeText(context, "Nuevos recorridos agregados!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "No hay recorridos nuevos", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    Toast.makeText(context, "Nuevos recorridos agregados!", Toast.LENGTH_SHORT).show()
-                } else {
-                  Toast.makeText(context, "No hay recorridos nuevos", Toast.LENGTH_SHORT ).show()
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    isLoading.value = false
                 }
             }
         },
+        enabled = !isLoading.value
     ) {
-        Text("Agregar nuevo recorrido")
+        Text(if (isLoading.value) "Cargando..." else "Agregar nuevo recorrido")
     }
 }

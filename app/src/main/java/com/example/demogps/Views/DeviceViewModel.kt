@@ -30,7 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resumeWithException
 
 class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
     private val db = AppDatabase.getInstance(aplication)
@@ -44,10 +46,10 @@ class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
 
     val allDevices: LiveData<List<DeviceEntity>> = deviceDao.getAllDevices()
 
-    fun insertarDevice(codigo: String, alias: String, descripcion: String){
+    fun insertarDevice(codigo: String, alias: String){
 
         viewModelScope.launch {
-            val device = DeviceEntity(codigo = codigo, alias = alias, descripcion = descripcion)
+            val device = DeviceEntity(codigo = codigo, alias = alias)
             deviceDao.insertDevice(device)
         }
     }
@@ -88,6 +90,19 @@ class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
             onConnected = {
                 _connectionStatus.value = "Conectado a ${device.name ?: device.address}"
 
+                viewModelScope.launch(Dispatchers.IO) {
+                    val dispositivoExistente = deviceDao.getForAdress(device.address)
+                    if (dispositivoExistente == null) {
+                        val nuevoDevice = DeviceEntity(
+                            codigo = device.address,
+                            alias = device.name ?: "Desconocido"
+                        )
+                        deviceDao.insertDevice(nuevoDevice)
+                        Log.d("DeviceViewModel", "Dispositivo guardado en la base de datos: ${nuevoDevice.alias}")
+                    } else {
+                        Log.d("DeviceViewModel", "El dispositivo ya existe en la base de datos.")
+                    }
+                }
 
                 // 🔄 Iniciar recepción de datos de forma asíncrona
                 bluetoothService.receiveData(
@@ -143,13 +158,16 @@ class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
     }
 
     suspend fun obtenerRecorridosDelDispositivo(): List<String> {
+        Log.d("obtener", "si entra aca")
         return withContext(Dispatchers.IO){
             try {
                 enviarComando("3")
 
                 val respuesta = recibirDatos()
+                Log.d("respuesta", respuesta)
 
                 if(respuesta.isNotEmpty()) {
+                    Log.d("respuesta", "no esta vacio")
                     respuesta.split(",").map { it.trim() }
                 }else {
                     emptyList()
@@ -199,56 +217,57 @@ class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
         }
     }
 
-    fun sincronizarRecorridos(deviceId: Long, onComplete: (String) -> Unit){
+    fun sincronizarRecorridos(deviceId: Long, onComplete: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val recorridosDelDispositivo = obtenerRecorridosDelDispositivo()
-                val recorridoBd = obtenerRecorridosDeLaBd(deviceId).value ?: emptyList()
+                val recorridoBd = recorridoDao.obtenerRecorridosPorDispositivoDirecto(deviceId)
 
                 val nombresEnBd = recorridoBd.map { it.date }
-                val nuevosRecorridos = recorridosDelDispositivo.filter { it.first().toString() !in nombresEnBd }
+                val nuevosRecorridos = recorridosDelDispositivo.filter { it !in nombresEnBd }
 
-                if(nuevosRecorridos.isNotEmpty()){
+                if (nuevosRecorridos.isNotEmpty()) {
                     nuevosRecorridos.forEach { recorrido ->
                         val entity = RecorridoEntity(
                             deviceId = deviceId,
-                            date = recorrido.first().toString(),
+                            date = recorrido
                         )
-                        insertarRecorrido(entity)
-                        obtenerCoordenadasDeRecorrido(recorrido, entity.id)
+                        val nuevoId = recorridoDao.insert(entity) // Guarda y obtén el ID generado
+                        obtenerCoordenadasDeRecorrido(recorrido, nuevoId)
                     }
-                    onComplete("Nuevos recorridos agregados!")
-                }else {
-                    onComplete("No hay recorridos nuevos")
+                    withContext(Dispatchers.Main) {
+                        onComplete("Nuevos recorridos agregados!")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        onComplete("No hay recorridos nuevos")
+                    }
                 }
             } catch (e: Exception) {
-                onComplete("Error al sincronizar: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    onComplete("Error al sincronizar: ${e.message}")
+                }
             }
         }
     }
 
+
     suspend fun recibirDatos(): String {
-        return withContext(Dispatchers.IO){
-            var response = ""
+        return suspendCancellableCoroutine { continuation ->
             bluetoothService.receiveData(
                 onDataReceived = { linea ->
-                    viewModelScope.launch {
-                        Log.d("Bluetooth", "Datos recibidos: $linea")
-                        if (linea.isNotEmpty()) {
-                            println("datos recibidos: $linea")
-                        }
+                    if (linea.isNotEmpty()) {
+                        Log.d("Novacio", linea)
+                        continuation.resume(linea.trim()) {}
                     }
                 },
                 onError = { error ->
-                    Log.e("Bluetooth", "Error al recibir datos: ${error.message}")
-                    _connectionStatus.value = "Error al recibir datos: ${error.message}"
+                    continuation.resumeWithException(Exception("Error al recibir datos: ${error.message}"))
                 }
             )
-
-            Thread.sleep(500)
-            response
         }
     }
+
 
     fun enviarComando(comando: String){
         bluetoothService.sendCommand(comando)
@@ -258,11 +277,6 @@ class DeviceViewModel(aplication: Application): AndroidViewModel(aplication) {
         bluetoothService.closeConnection()
         _connectionStatus.value = "Desconectado"
     }
-
-
-private fun Nothing?.insert(coordenada: CoordenadaEntity) {
-    TODO("Not yet implemented")
-}
 
 
 }
